@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>稀疏线性方程组迭代求解器 · 方案比较与自动选择</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#161d26; --panel2:#1c2530; --line:#2a3644;
+    --fg:#dfe7ef; --muted:#8397ab; --accent:#4db8ff; --accent2:#ffa94d;
+    --ok:#4ade80; --bad:#f87171; --warn:#fbbf24;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB",sans-serif}
+  header{padding:18px 24px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.2px}
+  .sub{color:var(--muted);font-size:12px}
+  main{display:grid;grid-template-columns:270px 1fr;min-height:calc(100vh - 58px)}
+  nav{border-right:1px solid var(--line);padding:12px 0;overflow-y:auto;max-height:calc(100vh - 58px)}
+  nav h2{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);
+    margin:14px 18px 6px;font-weight:600}
+  nav button{display:block;width:100%;text-align:left;background:none;border:0;
+    color:var(--fg);padding:7px 18px;cursor:pointer;font:inherit;font-size:13px;
+    border-left:3px solid transparent}
+  nav button:hover{background:var(--panel2)}
+  nav button.active{background:var(--panel2);border-left-color:var(--accent);color:#fff}
+  nav .meta{color:var(--muted);font-size:11px;font-family:var(--mono)}
+  section{padding:20px 26px;overflow-y:auto;max-height:calc(100vh - 58px)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:16px 18px;margin-bottom:16px}
+  .card h3{margin:0 0 12px;font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .card h3 .tag{font-size:10px;padding:2px 7px;border-radius:20px;background:var(--panel2);
+    color:var(--muted);font-weight:500;border:1px solid var(--line)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:1100px){.grid2,.grid3{grid-template-columns:1fr}}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{padding:6px 9px;text-align:right;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;
+    letter-spacing:.05em;position:sticky;top:0;background:var(--panel)}
+  td:first-child,th:first-child{text-align:left}
+  tbody tr:hover{background:var(--panel2)}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+  .kpi{display:flex;flex-direction:column;gap:3px}
+  .kpi .v{font:600 20px/1.1 var(--mono);color:#fff}
+  .kpi .l{font-size:11px;color:var(--muted)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;
+    font-family:var(--mono);border:1px solid var(--line);background:var(--panel2)}
+  .pill.spd{border-color:#1d4d36;background:#132a20;color:#6ee7a8}
+  .pill.non{border-color:#5a3a12;background:#2a1f10;color:#ffc06b}
+  .reasoning{list-style:none;padding:0;margin:0}
+  .reasoning li{padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px;
+    display:flex;gap:10px}
+  .reasoning li:last-child{border-bottom:0}
+  .reasoning .i{color:var(--accent);font-family:var(--mono);font-size:11px;flex:0 0 18px;padding-top:2px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);margin-top:8px}
+  .legend span{display:flex;align-items:center;gap:6px}
+  .sw{width:14px;height:3px;border-radius:2px}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .toolbar label{font-size:12px;color:var(--muted)}
+  select,button.btn{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:6px;padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}
+  button.btn.primary{background:#173a52;border-color:#2a5f80;color:#bfe3ff}
+  button.btn:hover{border-color:var(--accent)}
+  .note{color:var(--muted);font-size:12px}
+  pre{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin:0;
+    white-space:pre-wrap;word-break:break-all}
+  svg{display:block;width:100%;overflow:visible}
+  .axis{stroke:var(--line);stroke-width:1}
+  .gridline{stroke:var(--line);stroke-width:.5;opacity:.5}
+  .axlabel{fill:var(--muted);font-size:10px;font-family:var(--mono)}
+  .empty{color:var(--muted);padding:40px;text-align:center;font-size:13px}
+  .bar{height:8px;border-radius:4px;background:var(--panel2);overflow:hidden;min-width:60px}
+  .bar>i{display:block;height:100%;border-radius:4px}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px;margin-top:8px}
+  .checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .check{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:9px 11px}
+  .check .t{font-size:11px;color:var(--muted)}
+  .check .v{font-family:var(--mono);font-size:13px;margin-top:3px}
+</style>
+</head>
+<body>
+<header>
+  <h1>稀疏线性方程组 · 迭代求解与预条件比较</h1>
+  <span class="sub">纯 NumPy 实现 · CSR + 多进程 SpMV · CG / BiCGSTAB / GMRES(m) · Jacobi / IC(0) / ILU(0) / SSOR · 逆卡氏重排 · 自动选择</span>
+</header>
+<main>
+  <nav id="nav"><h2>问题</h2></nav>
+  <section id="view"><div class="empty">载入中…</div></section>
+</main>
+<script>
+"use strict";
+const state = {index:null, current:null, data:null, selected:new Set()};
+
+const fmt = (x,d=3) => {
+  if (x===null||x===undefined) return "—";
+  if (typeof x!=="number") return String(x);
+  if (!isFinite(x)) return "∞";
+  const dd = Math.max(0, Math.min(12, d));
+  if (x!==0 && (Math.abs(x)>=1e5 || Math.abs(x)<1e-3)) {
+    const e = Math.floor(Math.log10(Math.abs(x)));
+    const m = x/Math.pow(10,e);
+    return m.toFixed(Math.max(0, dd-1))+"e"+(e>=0?"+":"")+e;
+  }
+  return x.toFixed(dd);
+};
+const fmtInt = x => (x===null||x===undefined)? "—" : Math.round(x).toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const shortName = k => k.replace(/_/g," ");
+
+const SOLVER_COLOR = {
+  cg:"#4db8ff", bicgstab:"#ffa94d", gmres:"#c792ea"
+};
+const PC_COLOR = {
+  none:"#6b7f95", jacobi:"#4ade80", ic0:"#4db8ff", ilu0:"#ffa94d", ssor:"#f472b6"
+};
+const PC_NAME = {none:"无", jacobi:"Jacobi", ic0:"IC(0)", ilu0:"ILU(0)", ssor:"SSOR"};
+
+function recLabel(r){
+  let s = `${r.solver} + ${PC_NAME[r.precond]||r.precond}`;
+  if (r.reorder) s += " ⟲RCM";
+  return s;
+}
+function recColor(r){
+  if (r.reorder) return "#fbbf24";
+  return PC_COLOR[r.precond] || SOLVER_COLOR[r.solver] || "#aaa";
+}
+function recDash(r){
+  if (r.precond==="none") return "4 3";
+  if (r.reorder) return "2 3";
+  return "";
+}
+
+/* --------------------------- 折线图（残差下降） --------------------------- */
+function lineChart(series, opts){
+  const W=760, H=opts.height||330, pad={l:56,r:14,t:12,b:34};
+  const iw=W-pad.l-pad.r, ih=H-pad.t-pad.b;
+  // 收集所有点
+  const pts=[];
+  series.forEach(s=>s.data.forEach((v,i)=>{ if(isFinite(v)&&v>0) pts.push([s.x0+i*(s.dx||1), v]); }));
+  if(!pts.length) return `<div class="empty">无有效数据</div>`;
+  const xs=pts.map(p=>p[0]), ys=pts.map(p=>p[1]);
+  const xmin=0, xmax=Math.max(...xs, 1);
+  let ymin=Math.min(...ys), ymax=Math.max(...ys);
+  ymin=Math.pow(10, Math.floor(Math.log10(ymin)));
+  ymax=Math.pow(10, Math.ceil(Math.log10(ymax)));
+  if (ymax<=ymin) ymax=ymin*10;
+  const X = v => pad.l + (v-xmin)/(xmax-xmin)*iw;
+  const Y = v => {
+    const ly=Math.log10(Math.max(v,ymin));
+    return pad.t + (1-(ly-Math.log10(ymin))/(Math.log10(ymax)-Math.log10(ymin)))*ih;
+  };
+  // y 轴十进制刻度
+  let yticks=[];
+  for(let e=Math.log10(ymin); e<=Math.log10(ymax)+1e-9; e++){
+    yticks.push(Math.pow(10,e));
+  }
+  // x 轴刻度
+  const nx=Math.min(8, Math.max(2, Math.round(xmax/ (opts.xtick||Math.max(1,Math.ceil(xmax/8))))));
+  let xticks=[]; for(let i=0;i<=nx;i++) xticks.push(xmin + i*(xmax-xmin)/nx);
+  let g="";
+  yticks.forEach(t=>{
+    const y=Y(t);
+    g+=`<line class="gridline" x1="${pad.l}" x2="${W-pad.r}" y1="${y}" y2="${y}"/>`;
+    g+=`<text class="axlabel" x="${pad.l-8}" y="${y+3}" text-anchor="end">1e${Math.round(Math.log10(t))}</text>`;
+  });
+  xticks.forEach(t=>{
+    const x=X(t);
+    g+=`<line class="gridline" x1="${x}" x2="${x}" y1="${pad.t}" y2="${H-pad.b}"/>`;
+    g+=`<text class="axlabel" x="${x}" y="${H-pad.b+16}" text-anchor="middle">${fmtInt(t)}</text>`;
+  });
+  // 目标线
+  if(opts.tol){
+    const y=Y(opts.tol);
+    if(y>=pad.t && y<=H-pad.b)
+      g+=`<line x1="${pad.l}" x2="${W-pad.r}" y1="${y}" y2="${y}" stroke="#f87171" stroke-width="1" stroke-dasharray="5 4" opacity=".8"/>`;
+  }
+  let paths="";
+  series.forEach(s=>{
+    let d="", started=false, prev=null;
+    s.data.forEach((v,i)=>{
+      if(!isFinite(v) || v<=0) return;
+      const px=X(s.x0+i*(s.dx||1)), py=Y(v);
+      d += (started?"L":"M")+px.toFixed(2)+" "+py.toFixed(2)+" ";
+      started=true;
+    });
+    if(d) paths+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.7}"
+      stroke-dasharray="${s.dash||""}" opacity="${s.opacity||1}"/>`;
+  });
+  g += `<line class="axis" x1="${pad.l}" x2="${pad.l}" y1="${pad.t}" y2="${H-pad.b}"/>`;
+  g += `<line class="axis" x1="${pad.l}" x2="${W-pad.r}" y1="${H-pad.b}" y2="${H-pad.b}"/>`;
+  g += `<text class="axlabel" x="${pad.l+iw/2}" y="${H-6}" text-anchor="middle">${esc(opts.xlabel||"迭代次数")}</text>`;
+  g += `<text class="axlabel" x="14" y="${pad.t+ih/2}" text-anchor="middle" transform="rotate(-90 14 ${pad.t+ih/2})">${esc(opts.ylabel||"相对残差 ‖r‖/‖b‖")}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img">${g}${paths}</svg>`;
+}
+
+/* --------------------------- 稀疏结构散点图 --------------------------- */
+function spyChart(st, title, color){
+  const W=380,H=380, pad=26, iw=W-pad*2;
+  let dots="";
+  const n=st.x.length;
+  const step = Math.max(1, Math.floor(n/12000));
+  for(let i=0;i<n;i+=step){
+    const x=pad+st.x[i]*iw, y=pad+st.y[i]*iw;
+    dots+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="1.3" height="1.3" fill="${color}" opacity=".75"/>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}">
+    <rect x="${pad}" y="${pad}" width="${iw}" height="${iw}" fill="#0c1116" stroke="var(--line)"/>
+    ${dots}
+    <text class="axlabel" x="${W/2}" y="14" text-anchor="middle">${esc(title)}</text>
+    <text class="axlabel" x="${W/2}" y="${H-6}" text-anchor="middle">n=${fmtInt(st.n)} · nnz=${fmtInt(st.nnz)} · 带宽 ${fmtInt(st.bandwidth)}</text>
+  </svg>`;
+}
+
+/* --------------------------- 条形对比 --------------------------- */
+function hbars(items, opts={}){
+  // items: [{label, value, color, note}]
+  const W=opts.width||720, rowh=opts.rowh||26, pad={l:210,r:80,t:6,b:6};
+  const H=pad.t+pad.b+items.length*rowh;
+  const iw=W-pad.l-pad.r;
+  const vmax=Math.max(...items.map(i=>i.value||0), 1e-12);
+  let g="";
+  items.forEach((it,k)=>{
+    const y=pad.t+k*rowh;
+    const w=Math.max(2,(it.value||0)/vmax*iw);
+    g+=`<text class="axlabel" x="${pad.l-10}" y="${y+rowh*0.62}" text-anchor="end"
+        style="font-size:11px;fill:var(--fg)">${esc(it.label)}</text>`;
+    g+=`<rect x="${pad.l}" y="${y+rowh*0.2}" width="${iw}" height="${rowh*0.6}"
+        fill="var(--panel2)" rx="3"/>`;
+    g+=`<rect x="${pad.l}" y="${y+rowh*0.2}" width="${w}" height="${rowh*0.6}"
+        fill="${it.color||"var(--accent)"}" rx="3" opacity=".9"/>`;
+    g+=`<text class="axlabel" x="${pad.l+iw+8}" y="${y+rowh*0.62}"
+        style="font-size:11px;fill:var(--fg)">${esc(it.note||fmt(it.value))}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" style="max-width:${W}px">${g}</svg>`;
+}
+
+/* --------------------------- 预条件代价-收益表 --------------------------- */
+function precondCostTable(recs){
+  const base = recs.find(r=>r.precond==="none" && !r.reorder);
+  const baseIt = base && base.converged ? base.iterations : null;
+  const seen = new Set();
+  const rows = [];
+  recs.forEach(r=>{
+    if(r.reorder) return;
+    const k = r.solver+"/"+r.precond;
+    if(seen.has(k)) return;
+    seen.add(k);
+    const isBase = r.precond==="none";
+    const improv = (!isBase && baseIt && r.converged) ? (1 - r.iterations/baseIt) : null;
+    const msIter = r.iterations>0 ? r.seconds/r.iterations*1000 : null;
+    const iterStr = msIter==null ? '—'
+        : (msIter<1 ? (msIter*1000).toFixed(0)+' μs' : msIter.toFixed(2)+' ms');
+    rows.push(`<tr style="${isBase?'opacity:.7':''}">
+      <td>${esc(PC_NAME[r.precond]||r.precond)}${isBase?' <span class="note">(基准)</span>':''}</td>
+      <td class="num">${fmt(r.build_s,3)}</td>
+      <td class="num">${fmt(r.mem_bytes/1048576,1)} MB</td>
+      <td class="num">${r.converged?fmtInt(r.iterations):'未收敛'}</td>
+      <td class="num">${improv==null?'—':(improv>=0?'−':'+')+Math.abs(improv*100).toFixed(0)+'%'}</td>
+      <td class="num">${iterStr}</td>
+    </tr>`);
+  });
+  return `<div style="overflow-x:auto"><table>
+    <thead><tr><th>预条件</th><th>建立 s</th><th>预条件内存</th><th>迭代数</th>
+      <th>相对无预条件</th><th>每次迭代</th></tr></thead>
+    <tbody>${rows.join("")}</tbody></table></div>`;
+}
+
+/* --------------------------- 渲染主视图 --------------------------- */
+function render(){
+  const d=state.data, v=document.getElementById("view");
+  if(!d){ v.innerHTML='<div class="empty">选择左侧问题</div>'; return; }
+  const S=d.summary, F=d.features;
+  const mapPill = S.structurally_symmetric && F.asymmetry<1e-8
+      ? '<span class="pill spd">对称</span>'
+      : '<span class="pill non">非对称</span>';
+  const spdPill = F.looks_spd ? '<span class="pill spd">SPD</span>'
+      : '<span class="pill non">非 SPD</span>';
+
+  const recs=d.records;
+  const key=state.current;
+  // 默认选中：自动选择对应记录 + 全部
+  let selected = recs.filter(r=>r.converged);
+  if(!selected.length) selected = recs;
+  const autoRec = recs.find(r => r.solver===d.auto.solver &&
+      r.precond===d.auto.precond && (r.reorder||null)===(d.auto.reorder||null));
+  const series = selected.map((r,i)=>({
+      data:r.history, color:recColor(r), dash:recDash(r),
+      label:recLabel(r), x0:0, dx:r.history.length>1 ? r.iterations/(r.history.length-1) : 1,
+      width: autoRec===r ? 2.8 : 1.5, opacity: autoRec===r ? 1 : 0.85
+  }));
+  const legend = selected.map((r,i)=>{
+      const s = series[i];
+      const sw = s.dash
+        ? `<i class="sw" style="background:none;border-top:2px dashed ${s.color};height:0"></i>`
+        : `<i class="sw" style="background:${s.color}"></i>`;
+      return `<span>${sw}${esc(s.label)}</span>`;
+  }).join("");
+
+  // 记录表
+  const rows = recs.slice().sort((a,b)=> (b.converged-a.converged) || (a.iterations-b.iterations) || (a.total_s-b.total_s));
+  const trs = rows.map(r=>{
+    const st = r.converged ? '<span class="ok">✓</span>' : '<span class="bad">✗</span>';
+    const isAuto = autoRec===r;
+    return `<tr style="${isAuto?'background:#132a3a':''}">
+      <td>${esc(recLabel(r))}${isAuto?' <span class="pill">自动</span>':''}${
+        (r.stats&&r.stats.fallback_chain&&r.stats.fallback_chain.length)
+        ? ' <span class="pill non" title="'+esc(r.stats.fallback_chain.map(c=>c.from+'→'+c.to+': '+c.why).join('; '))+'">降级</span>' : ''}</td>
+      <td>${st} <span class="note">${esc(r.reason)}</span></td>
+      <td class="num">${fmtInt(r.iterations)}</td>
+      <td class="num">${fmt(r.rel_residual,2)}</td>
+      <td class="num">${fmt(r.build_s,3)}</td>
+      <td class="num">${fmt(r.total_s,2)}</td>
+      <td class="num">${fmt(r.mem_bytes/1048576,1)} MB</td>
+      <td class="num">${r.error_vs_dense!=null?fmt(r.error_vs_dense,2):'—'}</td>
+      <td class="num">${r.error_vs_exact!=null?fmt(r.error_vs_exact,2):'—'}</td>
+    </tr>`;
+  }).join("");
+
+  // 迭代次数条形
+  const convRecs = recs.filter(r=>r.converged);
+  const barItems = (convRecs.length?convRecs:recs).map(r=>({
+    label:recLabel(r), value:r.iterations, color:recColor(r),
+    note: r.converged? `${fmtInt(r.iterations)} 步 · ${fmt(r.total_s,2)}s` : "未收敛"
+  }));
+
+  // 自动选择
+  const A=d.auto;
+  const featRows = [
+    ["未知数 n", fmtInt(F.n)],
+    ["非零元 nnz", fmtInt(F.nnz)],
+    ["非对称度 ‖A−Aᵀ‖/‖A‖", fmt(F.asymmetry,2)],
+    ["结构对称", F.structurally_symmetric?"是":"否"],
+    ["对角占优行占比", (F.diag_dominant_fraction*100).toFixed(0)+"%"],
+    ["|diag| 量级跨度", fmt(F.diag_magnitude_ratio,2)],
+    ["零对角元", fmtInt(F.zero_diag)],
+    ["负对角元", fmtInt(F.neg_diag)],
+    ["平均每行非零", F.avg_row_nnz.toFixed(1)],
+  ].map(([k,v])=>`<div class="check"><div class="t">${esc(k)}</div><div class="v">${esc(String(v))}</div></div>`).join("");
+
+  const candRows = (A.candidates||[]).map(c=>{
+    const chosen = c.solver===A.solver && c.precond===A.precond && (c.reorder||null)===(A.reorder||null);
+    return `<tr style="${chosen?'background:#132a3a':''}">
+      <td>${esc(c.label)}${chosen?' <span class="pill">选用</span>':''}</td>
+      <td>${c.diverged?'<span class="bad">发散</span>':(c.ok?'<span class="ok">收敛</span>':'<span class="warn">未收敛</span>')}</td>
+      <td class="num">${c.diverged?'—':fmt(c.descent_rate,3)}</td>
+      <td class="num">${c.diverged?'—':fmt(c.rel_residual,2)}</td>
+      <td class="num">${fmt(c.build_s,3)}</td>
+      <td class="num">${c.diverged?'—':fmt(c.score,1)}</td>
+      <td class="note">${esc(c.note||"")}</td>
+    </tr>`;
+  }).join("");
+
+  // 带宽
+  const bw = d.bandwidth;
+  const bwItems = [];
+  if(bw.plain) bwItems.push({label:"原矩阵带宽", value:bw.plain.bandwidth, color:"#6b7f95", note:fmtInt(bw.plain.bandwidth)});
+  if(bw.rcm) bwItems.push({label:"RCM 后带宽", value:bw.rcm.bandwidth, color:"#fbbf24", note:fmtInt(bw.rcm.bandwidth)});
+  if(bw.plain) bwItems.push({label:"原矩阵轮廓", value:bw.plain.profile, color:"#4a5b6d", note:fmtInt(bw.plain.profile)});
+  if(bw.rcm) bwItems.push({label:"RCM 后轮廓", value:bw.rcm.profile, color:"#b08a20", note:fmtInt(bw.rcm.profile)});
+
+  const struct = d.structure || {};
+  const spy = (struct.plain && struct.rcm) ?
+     `<div class="grid2">${spyChart(struct.plain,"重排前 A","#4db8ff")}
+      ${spyChart(struct.rcm,"逆卡氏重排后 P A Pᵀ","#fbbf24")}</div>` :
+     (struct.plain? spyChart(struct.plain,"原始结构","#4db8ff") : "");
+
+  v.innerHTML = `
+    <div class="toolbar">
+      <span class="pill">${esc(key)}</span>
+      ${mapPill} ${spdPill}
+      <span class="note">${esc(S.kind)} · ${esc(S.meta.label||"")}</span>
+      <span style="flex:1"></span>
+      <label>容差</label><span class="num">${fmt(d.tol,0)}</span>
+    </div>
+
+    <div class="grid3" style="margin-bottom:16px">
+      <div class="card kpi"><div class="v">${fmtInt(S.n)}</div><div class="l">未知数</div></div>
+      <div class="card kpi"><div class="v">${fmtInt(S.nnz)}</div><div class="l">非零元 (${(S.density*1000).toFixed(2)}‰ 稠密)</div></div>
+      <div class="card kpi"><div class="v">${esc(A.solver)}+${esc(PC_NAME[A.precond]||A.precond)}${A.reorder?" ⟲":""}</div><div class="l">自动选择 · 置信度 ${esc(A.confidence)}</div></div>
+    </div>
+
+    <div class="card">
+      <h3>残差下降曲线 <span class="tag">相对残差 vs 迭代步</span></h3>
+      ${lineChart(series,{tol:d.tol})}
+      <div class="legend">${legend}</div>
+    </div>
+
+    <div class="card">
+      <h3>各方案对比 <span class="tag">同问题、同容差</span></h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>方案</th><th>收敛</th><th>迭代</th><th>相对残差</th>
+          <th>预条件建立 s</th><th>总耗时 s</th><th>内存</th>
+          <th>对稠密误差</th><th>对精确解误差</th></tr></thead>
+        <tbody>${trs}</tbody></table></div>
+      <div class="note" style="margin-top:8px">
+        “对稠密误差”= 与 numpy 稠密直接解的相对误差（仅 n≤3000 时给出）；
+        “对精确解误差”= 与生成时已知解 x* 的相对误差。总耗时 = 预条件建立 + 迭代。
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>预条件的代价与收益 <span class="tag">建立代价 vs 迭代改善</span></h3>
+      ${precondCostTable(recs)}
+      <div class="note" style="margin-top:8px">
+        相对“无预条件”的迭代减少量 = 1 − 本方案迭代数 / 无预条件迭代数（越大越好）；
+        单次迭代耗时 ≈ 总耗时 / 迭代数，反映每次预条件应用的开销。
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>迭代次数 <span class="tag">仅收敛方案</span></h3>
+        ${hbars(barItems,{width:640})}
+      </div>
+      <div class="card">
+        <h3>带宽 / 轮廓 <span class="tag">逆卡氏重排效果</span></h3>
+        ${bwItems.length? hbars(bwItems,{width:640}) : '<div class="empty">无数据</div>'}
+        <div class="note" style="margin-top:8px">
+          逆卡氏重排按图的最远优先 BFS 层次编号，主要压缩<b>轮廓</b>（每行最左非零与
+          对角之间的区域），对不规则网格的带宽改善尤其明显。规则网格的自然行主序
+          本身已接近最优带宽，RCM 可能反而增大带宽——因此是否值得重排由试跑实测决定，
+          不能只看带宽。
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>稀疏结构 <span class="tag">行/列归一化散点</span></h3>
+      ${spy || '<div class="empty">无结构数据</div>'}
+    </div>
+
+    <div class="card">
+      <h3>自动选择的依据 <span class="tag">静态特征 → 试跑</span></h3>
+      <div class="checks">${featRows}</div>
+      <h3 style="margin-top:16px">决策过程</h3>
+      <ul class="reasoning">
+        ${(A.reasoning||[]).map((t,i)=>`<li><span class="i">${i+1}</span><span>${esc(t)}</span></li>`).join("")}
+      </ul>
+      <h3 style="margin-top:16px">候选试跑记录 <span class="tag">每项最多 ${Math.max(...(A.candidates||[{iterations:0}]).map(c=>c.iterations))} 步 / 提前收敛</span></h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>候选</th><th>结果</th><th>对数下降率/步</th><th>终点残差</th>
+          <th>建立 s</th><th>评分</th><th>备注</th></tr></thead>
+        <tbody>${candRows}</tbody></table></div>
+      <div class="note" style="margin-top:8px">
+        评分 = −(预计达到 1e-8 所需步数 + 建立代价折算步数)，越接近 0 越好；
+        下降率由试跑残差后半段的对数线性拟合得到。发散候选直接淘汰。
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>矩阵生成参数</h3>
+      <pre>${esc(JSON.stringify(S.meta,null,1))}</pre>
+    </div>
+  `;
+  v.scrollTop = 0;
+}
+
+/* --------------------------- 载入 --------------------------- */
+async function loadIndex(){
+  const r = await fetch("data/index.json", {cache:"no-store"});
+  state.index = await r.json();
+  const nav=document.getElementById("nav");
+  const groups={};
+  state.index.problems.forEach(p=>{
+    const g = p.scale==="large" ? "大规模" : (p.scale==="small" ? "小规模" : "中等规模");
+    (groups[g]=groups[g]||[]).push(p);
+  });
+  let html='<h2>问题</h2>';
+  ["小规模","中等规模","大规模"].forEach(g=>{
+    if(!groups[g]) return;
+    html+=`<h2 style="margin-top:12px">${g}</h2>`;
+    groups[g].forEach(p=>{
+      html+=`<button data-key="${esc(p.key)}">
+        <div>${esc(p.label)}</div>
+        <div class="meta">n=${fmtInt(p.n)} · ${esc(p.kind)}</div>
+      </button>`;
+    });
+  });
+  nav.innerHTML=html;
+  nav.querySelectorAll("button").forEach(b=>{
+    b.onclick=()=>selectProblem(b.dataset.key);
+  });
+  if(state.index.problems.length) selectProblem(state.index.problems[0].key);
+}
+
+async function selectProblem(key){
+  state.current=key;
+  document.querySelectorAll("#nav button").forEach(b=>{
+    b.classList.toggle("active", b.dataset.key===key);
+  });
+  const v=document.getElementById("view");
+  v.innerHTML='<div class="empty">计算中…（首次计算需要几秒）</div>';
+  try{
+    const r=await fetch(`data/problem_${key}.json`,{cache:"no-store"});
+    if(!r.ok) throw new Error("缺少数据文件 data/problem_"+key+".json");
+    state.data=await r.json();
+    render();
+  }catch(e){
+    v.innerHTML=`<div class="empty">载入失败：${esc(e.message)}<br><br>
+      请先运行 <code>python3 -m sparsesolve.export_web web/data</code> 生成数据。</div>`;
+  }
+}
+
+loadIndex().catch(e=>{
+  document.getElementById("view").innerHTML=
+    `<div class="empty">无法载入 data/index.json：${esc(e.message)}<br><br>
+     请先运行 <code>python3 -m sparsesolve.export_web web/data</code></div>`;
+});
+</script>
+</body>
+</html>

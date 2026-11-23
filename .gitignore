@@ -16,3 +16,13 @@ node_modules/
 __pycache__/
 .venv/
 venv/
+
+# 生成物：验收报告与页面数据（可由 scripts/run.py 重新生成）
+reports/*.json
+web/data/*.json
+!web/data/.gitkeep
+
+# Python 缓存
+*.pyc
+.pytest_cache/
+
