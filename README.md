@@ -14,13 +14,17 @@ python3 scripts/run.py export            # -> web/data/
 # 2) 跑完整验收，输出 reports/acceptance.json
 python3 scripts/run.py acceptance
 
-# 3) 看页面
+# 3) 把验收结果转成可读的 Markdown
+python3 scripts/report.py reports/acceptance.json > reports/REPORT.md
+
+# 4) 看页面
 python3 scripts/run.py serve             # http://127.0.0.1:8765/index.html
 
-# 4) 单元测试
+# 5) 单元测试 / 快速冒烟
 python3 -m pytest tests/ -q
+python3 scripts/smoke.py
 
-# 5) 单问题基准
+# 6) 单问题基准
 python3 scripts/run.py bench --key poisson2d_large
 ```
 
@@ -56,13 +60,20 @@ Python 进程间同步开销限制）。数值与串行完全一致。
 数秒。IC(0)/ILU(0)/SSOR 的每次应用都建立在这之上。
 
 **不完全分解**：right-looking IKJ，纯 Python 列表原地更新（每行更新量小，
-NumPy 逐行内核开销反而更大）。1M 未知数 / 5M 非零元约 1.2 s 建好 IC(0)。
+NumPy 逐行内核开销反而更大）。1M 未知数 / 5M 非零元约 3–5 s 建好 IC(0)（含分层
+结构预计算），此后每次应用约 50 ms（约 3 次 SpMV 的开销）。
 IC(0) 默认做对称对角缩放 D^{-1/2}AD^{-1/2}，显著降低非结构网格上出现
 负主元而失效的概率。
 
 **GMRES 用右预条件**：解 `A M⁻¹ y = b, x = M⁻¹ y`，这样内部残差估计与
 真实残差一致，停止判据可靠（左预条件会让估计值失真，实测会导致"假收敛"）。
 修正 Gram-Schmidt + 二次正交化。
+
+**逆卡氏重排**在验收里呈现了细致的结果：规则网格的带宽本已最优（RCM 不再改变
+带宽，只压缩约 1/3 轮廓）；不规则网格带宽可从 35 万降到约 1900（185 倍）；
+而弹性体问题 RCM 反而增大带宽，却把 IC(0) 迭代从 184 降到 75——因为 RCM 按
+拓扑连通性聚类，把高刚度区域收拢到相邻编号。**是否值得重排必须实测**，
+不能只看带宽，这正是自动选择对不完全分解额外试跑 RCM 版本的原因。
 
 **收敛判据**统一为真实相对残差 `‖b − Ax‖/‖b‖ ≤ tol`，每 `check_every` 步
 用一次真实残差复核，其余迭代用递推残差做停止估计，兼顾可信性与开销。
@@ -119,3 +130,7 @@ IC(0) 默认做对称对角缩放 D^{-1/2}AD^{-1/2}，显著降低非结构网�
 * 大规模问题的 RCM 与不完全分解仍需 O(nnz) 的临时内存。
 * 自动选择的探测计时在毫秒级问题上有抖动；对“none / Jacobi 在常数对角
   Poisson 上等价”这类真实存在的情况，二者排序可能互换，但差距可忽略。
+* 对条件数极大（如 1e11）的问题，小相对残差**不等于**小解误差（误差可放大
+  cond·rel_residual）。验收里 `elastic_1e8` 用无预条件时残差 1e-11 但解误差
+  仍约 1e-2——这是问题本身的病态，不是求解器的错误；换用 Jacobi/IC(0) 可把
+  误差降低一个数量级。页面同时给出“对精确解误差”正是为了暴露这一点。

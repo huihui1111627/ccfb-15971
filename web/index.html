@@ -381,7 +381,7 @@ function render(){
     <div class="grid3" style="margin-bottom:16px">
       <div class="card kpi"><div class="v">${fmtInt(S.n)}</div><div class="l">未知数</div></div>
       <div class="card kpi"><div class="v">${fmtInt(S.nnz)}</div><div class="l">非零元 (${(S.density*1000).toFixed(2)}‰ 稠密)</div></div>
-      <div class="card kpi"><div class="v">${esc(A.solver)}+${esc(PC_NAME[A.precond]||A.precond)}${A.reorder?" ⟲":""}</div><div class="l">自动选择 · 置信度 ${esc(A.confidence)}</div></div>
+      <div class="card kpi"><div class="v">${esc(A.solver)}+${esc(PC_NAME[A.precond]||A.precond)}${A.reorder?" ⟲":""}</div><div class="l">自动选择 · 置信度 ${esc(A.confidence)}${A.used_subproblem?" · 子问题试跑":""}</div></div>
     </div>
 
     <div class="card">
@@ -485,11 +485,20 @@ async function loadIndex(){
   nav.querySelectorAll("button").forEach(b=>{
     b.onclick=()=>selectProblem(b.dataset.key);
   });
-  if(state.index.problems.length) selectProblem(state.index.problems[0].key);
+  // 支持 #<key> 深链接
+  const hashKey = decodeURIComponent((location.hash||"").replace(/^#/,""));
+  const known = state.index.problems.map(p=>p.key);
+  const first = known.includes(hashKey) ? hashKey : (state.index.problems[0]||{}).key;
+  if(first) selectProblem(first);
+  window.addEventListener("hashchange", ()=>{
+    const k=decodeURIComponent((location.hash||"").replace(/^#/,""));
+    if(known.includes(k) && k!==state.current) selectProblem(k);
+  });
 }
 
 async function selectProblem(key){
   state.current=key;
+  if(location.hash !== "#"+key) history.replaceState(null,"","#"+key);
   document.querySelectorAll("#nav button").forEach(b=>{
     b.classList.toggle("active", b.dataset.key===key);
   });

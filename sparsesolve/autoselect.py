@@ -310,23 +310,32 @@ def _probe_candidate(prob: Problem, solver: str, precond_name: str,
     probe_s = time.perf_counter() - t1
     hist = np.asarray(res.history, dtype=np.float64)
     hist = hist[np.isfinite(hist) & (hist > 0)]
-    if hist.size >= 8:
-        # 用对数残差（log10）的后 40% 做线性拟合，斜率即每步的十进制量级下降
+    # 用“平均每步 log10 下降”刻画收敛速度：
+    #   descent = (log10(rel_初) - log10(rel_末)) / 迭代数
+    # 这直接反映“跑到这里用了多少步”，比只看尾部斜率更稳健——某些方案
+    # 前期慢后期快（或反之），尾部斜率会被平台段误导，平均值不会。
+    # 同时保留尾部拟合斜率作为参考（写入 extra，不参与主评分）。
+    if hist.size >= 2:
+        iters = max(int(res.iterations), 1)
+        rel0 = float(hist[0])
+        relT = float(hist[-1])
+        if rel0 > 0 and relT > 0 and relT < rel0:
+            descent = (np.log10(rel0) - np.log10(relT)) / iters
+        else:
+            descent = 0.0
+        # 尾部斜率参考值
         h = hist[max(2, hist.size * 2 // 5):]
-        x = np.arange(h.size, dtype=np.float64)
-        logs = np.log10(h)
-        xm = x.mean()
-        denom = float(np.sum((x - xm) ** 2))
-        slope = -float(np.sum((x - xm) * (logs - logs.mean())) / denom) if denom > 0 else 0.0
-        diffs = -np.diff(logs)
-        med = float(np.median(diffs)) if diffs.size else 0.0
-        descent = 0.5 * (slope + med)
-    elif hist.size >= 2:
-        logs = np.log10(hist)
-        diffs = -np.diff(logs)
-        descent = float(np.median(diffs)) if diffs.size else 0.0
+        if h.size >= 3:
+            x = np.arange(h.size, dtype=np.float64)
+            logs = np.log10(h)
+            xm = x.mean()
+            den = float(np.sum((x - xm) ** 2))
+            tail_slope = -float(np.sum((x - xm) * (logs - logs.mean())) / den) if den > 0 else 0.0
+        else:
+            tail_slope = descent
     else:
         descent = 0.0
+        tail_slope = 0.0
     diverged = bool(res.rel_residual > 1.0 and res.rel_residual > hist[0] if hist.size else True)
     ok = bool(res.converged)
     per_iter_s = probe_s / max(res.iterations, 1)
@@ -459,13 +468,20 @@ def auto_select(prob: Problem, tol: float = 1e-8, maxiter: int = 5000,
     size_ratio = (float(prob.nnz) / max(1, probe_prob.nnz)
                   if used_sub else 1.0)
     results: List[CandidateResult] = []
+    # 子问题只能代表局部；当整体矩阵严重非等比例（对角量级跨度大）且非对角
+    # 占优时，子问题会高估“无预条件”的可行性（局部块条件好、全局条件差）。
+    # 此时给无预条件/纯 Jacobi 加一个保守惩罚，避免在大问题上选到要几千步的方案。
+    ill_scaled = (feats["diag_magnitude_ratio"] > 100.0 and
+                  feats["diag_dominant_fraction"] < 0.5)
     for solver, precond, ro in cand_triples:
-        # 子问题本身已 RCM 重排，此处的 ro="rcm" 无额外意义；直接跳过 rcm 变体
         if used_sub and ro == "rcm":
             continue
         c = _probe_candidate(probe_prob, solver, precond, pi, tol_probe,
                              reorder=ro if not used_sub else None)
         c.score = _score(c, tol=tol_probe, size_ratio=size_ratio)
+        if used_sub and ill_scaled and precond in ("none", "jacobi"):
+            # 按 1.5 倍步数惩罚预测耗时（子问题低估了全局迭代增长）
+            c.score *= 1.5
         results.append(c)
         if verbose:
             print(f"    probe {c.label():22s}: it={c.iterations:4d} "
@@ -488,6 +504,26 @@ def auto_select(prob: Problem, tol: float = 1e-8, maxiter: int = 5000,
         confidence = "low"
         reorder = None
     else:
+        # 平手规则：预测耗时接近（相对差 < 15%）时，优先“每步更便宜”的方案，
+        # 因为探测期只跑几十步，GMRES 的重启/正交化、IC(0) 的三角求解等
+        # 每步开销在短探测里代表不充分；每步更便宜的方案在正式求解中更稳。
+        best_abs = -best.score
+        cheaper = None
+        for c in results:
+            if c is best or c.score <= -1e5:
+                continue
+            c_abs = -c.score
+            if best_abs > 0 and (c_abs - best_abs) / best_abs < 0.15:
+                if cheaper is None or c.per_iter_s < cheaper.per_iter_s:
+                    cheaper = c
+        if cheaper is not None and cheaper.per_iter_s < 0.9 * best.per_iter_s:
+            reasoning.append(
+                f"预测耗时接近（{best.label()} {best_abs*1e3:.0f}ms vs "
+                f"{cheaper.label()} {(-cheaper.score)*1e3:.0f}ms），但后者每步"
+                f"更便宜（{cheaper.per_iter_s*1e3:.2f}ms vs "
+                f"{best.per_iter_s*1e3:.2f}ms），短探测下其每步开销代表性更足 → 选它。")
+            best = cheaper
+            reorder = best.reorder
         runner = results[1] if len(results) > 1 else None
         reasoning.append(
             f"试跑（最多 {pi} 步）：{best.label()} 的残差下降最快"

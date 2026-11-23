@@ -159,8 +159,11 @@ def _cm_order(adj_ptr, adj, n, start):
                             visited[v] = True
                             cand.append(v)
                 if cand:
-                    # 层内按度升序
-                    cand.sort(key=lambda x: (deg[x], x))
+                    # 层内按原始编号升序（与 scipy 的 RCM 一致）。
+                    # 不用“按度升序”做层内排序：规则网格上所有内点度相同，
+                    # 按度排序会把对角波前拆散，带宽反而翻倍；按编号升序
+                    # 能保持波前连续，带宽 ≈ min(nx,ny)，轮廓也最佳。
+                    cand.sort()
                     queue.extend(cand)
         if len(order) == n:
             break

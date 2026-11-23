@@ -37,7 +37,9 @@ def cmd_acceptance(args):
 def _print_summary(s):
     print("\n=== 小规模 vs 稠密直接法 ===")
     for it in s["small"]["items"]:
-        print(f"  {it['problem']:22s} n={it['n']:6d} 稠密交叉校验={it['dense_cross_check']:.1e}")
+        dc = it["dense_cross_check"]
+        dcs = f"{dc:.1e}" if dc is not None else "—(n>1500，仅对 numpy)"
+        print(f"  {it['problem']:22s} n={it['n']:6d} 稠密交叉校验={dcs}")
         for r in it["records"]:
             status = "✓" if r["converged"] else "✗"
             err = r["error_vs_dense"]

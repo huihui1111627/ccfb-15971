@@ -202,15 +202,23 @@ def benchmark_preconds(prob: Problem, solvers=None, preconds=None,
 
 # ---------------------------------------------------------------------------
 def _acceptance_small(problems, tol=1e-10, maxiter=10000) -> Dict:
-    """小规模问题与稠密直接法对比。"""
+    """小规模问题与稠密直接法对比。
+
+    * 与 ``numpy.linalg.solve`` 对比：n ≤ 12000 都做，作为主要参考；
+    * 与自带的纯 Python 稠密高斯消元对比（交叉验证 numpy 本身）：仅 n ≤ 1500，
+      因为它是 O(n³) 的纯 Python 实现。
+    """
     rows = []
     for prob in problems:
-        if prob.n > 4000:
+        if prob.n > 12000:
             continue
         xd = dense_reference_solve(prob)
-        xd_own = dense_direct_solve_own(prob.A.to_dense(), prob.b)
-        dense_cross = float(np.linalg.norm(xd - xd_own) /
-                            max(np.linalg.norm(xd), 1e-300))
+        if prob.n <= 1500:
+            xd_own = dense_direct_solve_own(prob.A.to_dense(), prob.b)
+            dense_cross = float(np.linalg.norm(xd - xd_own) /
+                                max(np.linalg.norm(xd), 1e-300))
+        else:
+            dense_cross = None
         recs = []
         feats = analyze_matrix(prob.A)
         if feats["looks_spd"]:
@@ -228,7 +236,7 @@ def _acceptance_small(problems, tol=1e-10, maxiter=10000) -> Dict:
             recs.append(r)
         rows.append({"problem": prob.name, "n": prob.n,
                      "dense_cross_check": dense_cross,
-                     "records": [r.to_dict() for r in recs]})
+                     "records": [r.to_dict(keep_history=False) for r in recs]})
     return {"items": rows}
 
 
@@ -250,11 +258,16 @@ def _acceptance_large(problems, tol=1e-8, maxiter=20000) -> Dict:
         try:
             r = solve_one(prob, combo[0], combo[1], tol=tol, maxiter=maxiter,
                           record_every=max(1, maxiter // 200))
-            if not r.converged and feats["looks_spd"] and combo[1] != "jacobi":
-                # IC(0) 退化时退回 Jacobi，模拟自动选择的降级行为
-                r = solve_one(prob, "cg", "jacobi", tol=tol, maxiter=maxiter,
-                              record_every=max(1, maxiter // 200))
-                combo = ("cg", "jacobi")
+            if not r.converged and feats["looks_spd"] and combo[1] not in ("jacobi",):
+                # IC(0) 退化时依次尝试 SSOR、Jacobi（与自动选择的降级顺序一致）
+                for alt in ("ssor", "jacobi"):
+                    r2 = solve_one(prob, "cg", alt, tol=tol, maxiter=maxiter,
+                                   record_every=max(1, maxiter // 200))
+                    if r2.converged or r2.iterations > r.iterations:
+                        r = r2
+                        combo = ("cg", alt)
+                    if r.converged:
+                        break
             rows.append({"problem": prob.name, "n": prob.n, "nnz": prob.nnz,
                          "solver": combo[0], "precond": combo[1],
                          "converged": r.converged, "reason": r.reason,
@@ -271,10 +284,17 @@ def _acceptance_large(problems, tol=1e-8, maxiter=20000) -> Dict:
 
 
 def _acceptance_auto_vs_bruteforce(problems, tol=1e-8, maxiter=5000) -> Dict:
-    """自动选择 vs 枚举最快方案。"""
+    """自动选择 vs 枚举最快方案。
+
+    大问题（n > 300000）枚举全部组合代价过高（每个 1M 问题单次求解几十秒），
+    因此只枚举自动选择推荐的组合加一个低开销对照（none / jacobi），并在报告
+    中标注 ``n_candidates_tried`` 与 ``limited``，不做静默截断。
+    """
     rows = []
     for prob in problems:
         feats = analyze_matrix(prob.A)
+        choice_pre = auto_select(prob, tol=tol, maxiter=maxiter)
+        limited = prob.n > 300000
         if feats["looks_spd"]:
             combos = [("cg", p) for p in ("none", "jacobi", "ic0", "ssor")]
             combos += [("cg", "ic0", "rcm")]
@@ -282,6 +302,14 @@ def _acceptance_auto_vs_bruteforce(problems, tol=1e-8, maxiter=5000) -> Dict:
             combos = [("bicgstab", p) for p in ("none", "jacobi", "ilu0")]
             combos += [("gmres", p) for p in ("none", "jacobi", "ilu0")]
             combos += [("gmres", "ilu0", "rcm")]
+        if limited:
+            chosen = (choice_pre.solver, choice_pre.precond,
+                      choice_pre.reorder)
+            keep = {("cg" if feats["looks_spd"] else None, "none", None),
+                    ("cg" if feats["looks_spd"] else "bicgstab", "jacobi", None),
+                    chosen}
+            combos = [c for c in combos
+                      if (c[0], c[1], c[2] if len(c) > 2 else None) in keep]
         brute = []
         for combo in combos:
             s, p = combo[0], combo[1]
@@ -296,14 +324,16 @@ def _acceptance_auto_vs_bruteforce(problems, tol=1e-8, maxiter=5000) -> Dict:
             continue
         fastest = min(ok_brute, key=lambda r: r.total_s)
         fewest = min(ok_brute, key=lambda r: r.iterations)
-        choice = auto_select(prob, tol=tol, maxiter=maxiter)
+        choice = choice_pre
         try:
             auto_r = solve_one(prob, choice.solver, choice.precond, tol=tol,
-                               maxiter=maxiter, reorder=choice.reorder)
+                               maxiter=maxiter, reorder=choice.reorder,
+                               fallback=True)
         except Exception as exc:
             auto_r = None
         rows.append({
             "problem": prob.name, "n": prob.n,
+            "limited": limited, "n_candidates_tried": len(brute),
             "auto": {"solver": choice.solver, "precond": choice.precond,
                      "reorder": choice.reorder,
                      "confidence": choice.confidence,
@@ -379,14 +409,18 @@ def _acceptance_reordering(problems, tol=1e-8) -> Dict:
                  "before": before, "after": after}
         for ro, label in ((None, "plain"), ("rcm", "rcm")):
             try:
-                r = solve_one(prob, "cg", "ic0", tol=tol, maxiter=3000,
+                # 只需比较“未重排 vs 重排”对 IC(0) 的影响，不必跑完全收敛；
+                # 大问题上限制步数以控制验收总时长（结果里标注 limited）。
+                it_cap = 3000 if prob.n <= 200000 else 400
+                r = solve_one(prob, "cg", "ic0", tol=tol, maxiter=it_cap,
                               reorder=ro)
                 entry[label] = {"converged": r.converged,
                                 "iterations": r.iterations,
                                 "build_s": r.build_s,
                                 "total_s": r.total_s,
                                 "rel_residual": r.rel_residual,
-                                "reason": r.reason}
+                                "reason": r.reason,
+                                "limited_iters": it_cap < 3000}
             except Exception as exc:
                 entry[label] = {"converged": False, "reason": str(exc)}
         # SSOR 作为对照
@@ -429,23 +463,23 @@ def run_acceptance(out_dir: str, keys: Optional[List[str]] = None,
             problems.append(make_problem(k, seed=seed))
         except Exception as exc:
             print(f"跳过 {k}: {exc}")
-    print(f"已生成 {len(problems)} 个问题")
+    print(f"已生成 {len(problems)} 个问题", flush=True)
     summary = {"generated": [], "small": None, "large": None,
                "auto_vs_brute": None, "failure": None, "reorder": None,
                "structure": {}}
     for prob in problems:
         summary["generated"].append(prob.summary())
-    print("小规模 vs 稠密直接法 ...")
+    print("小规模 vs 稠密直接法 ...", flush=True)
     summary["small"] = _acceptance_small(problems)
-    print("大规模残差判据 ...")
+    print("大规模残差判据 ...", flush=True)
     summary["large"] = _acceptance_large(problems)
-    print("自动选择 vs 枚举 ...")
+    print("自动选择 vs 枚举 ...", flush=True)
     summary["auto_vs_brute"] = _acceptance_auto_vs_bruteforce(problems)
-    print("不收敛报告 ...")
+    print("不收敛报告 ...", flush=True)
     summary["failure"] = _acceptance_failure_report()
-    print("重排序效果 ...")
+    print("重排序效果 ...", flush=True)
     summary["reorder"] = _acceptance_reordering(problems)
-    print("稀疏结构图数据 ...")
+    print("稀疏结构图数据 ...", flush=True)
     for prob in problems:
         if prob.n <= 300000:
             summary["structure"][prob.name] = {
