@@ -241,22 +241,25 @@ function hbars(items, opts={}){
 
 /* --------------------------- 预条件代价-收益表 --------------------------- */
 function precondCostTable(recs){
-  const base = recs.find(r=>r.precond==="none" && !r.reorder);
-  const baseIt = base && base.converged ? base.iterations : null;
   const seen = new Set();
   const rows = [];
+  // 每个求解器各自的“无预条件”作为基准
+  const baseBySolver = {};
+  recs.forEach(r=>{ if(r.precond==="none" && !r.reorder) baseBySolver[r.solver]=r; });
   recs.forEach(r=>{
     if(r.reorder) return;
     const k = r.solver+"/"+r.precond;
     if(seen.has(k)) return;
     seen.add(k);
+    const base = baseBySolver[r.solver];
+    const baseIt = base && base.converged ? base.iterations : null;
     const isBase = r.precond==="none";
     const improv = (!isBase && baseIt && r.converged) ? (1 - r.iterations/baseIt) : null;
     const msIter = r.iterations>0 ? r.seconds/r.iterations*1000 : null;
     const iterStr = msIter==null ? '—'
         : (msIter<1 ? (msIter*1000).toFixed(0)+' μs' : msIter.toFixed(2)+' ms');
     rows.push(`<tr style="${isBase?'opacity:.7':''}">
-      <td>${esc(PC_NAME[r.precond]||r.precond)}${isBase?' <span class="note">(基准)</span>':''}</td>
+      <td>${esc(r.solver)} + ${esc(PC_NAME[r.precond]||r.precond)}${isBase?' <span class="note">(基准)</span>':''}</td>
       <td class="num">${fmt(r.build_s,3)}</td>
       <td class="num">${fmt(r.mem_bytes/1048576,1)} MB</td>
       <td class="num">${r.converged?fmtInt(r.iterations):'未收敛'}</td>
@@ -265,8 +268,8 @@ function precondCostTable(recs){
     </tr>`);
   });
   return `<div style="overflow-x:auto"><table>
-    <thead><tr><th>预条件</th><th>建立 s</th><th>预条件内存</th><th>迭代数</th>
-      <th>相对无预条件</th><th>每次迭代</th></tr></thead>
+    <thead><tr><th>方案</th><th>建立 s</th><th>预条件内存</th><th>迭代数</th>
+      <th>相对同求解器无预条件</th><th>每次迭代</th></tr></thead>
     <tbody>${rows.join("")}</tbody></table></div>`;
 }
 

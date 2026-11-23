@@ -31,36 +31,36 @@
 
 | 问题 | n | 方案 | 收敛 | 迭代 | 相对残差 | 满足判据 | 耗时 s | 内存 MB |
 |---|---|---|---|---|---|---|---|---|
-| poisson2d_med | 40000 | cg+ic0 | ✓ | 134 | 8.8e-09 | ✓ | 1.39 | 4.7 |
-| poisson2d_large | 1000000 | cg+ic0 | ✓ | 457 | 9.4e-09 | ✓ | 82.64 | 118.2 |
-| poisson3d_med | 64000 | cg+ic0 | ✓ | 41 | 6.4e-09 | ✓ | 0.94 | 9.8 |
-| poisson3d_large | 1000000 | cg+ic0 | ✓ | 78 | 9.3e-09 | ✓ | 21.75 | 155.3 |
-| irregular_med | 14400 | cg+ssor | ✓ | 170 | 8.0e-09 | ✓ | 0.44 | 2.3 |
-| irregular_large | 360000 | cg+ssor | ✓ | 1066 | 9.9e-09 | ✓ | 92.26 | 61.0 |
-| elastic_1e6 | 12800 | cg+ic0 | ✓ | 184 | 9.8e-09 | ✓ | 1.99 | 4.5 |
-| elastic_1e8 | 7200 | cg+ic0 | ✓ | 55 | 7.5e-09 | ✓ | 0.45 | 2.5 |
-| layered_1e4 | 40000 | cg+ic0 | ✓ | 176 | 9.9e-09 | ✓ | 1.81 | 4.7 |
-| conv_pe2 | 10000 | gmres+ilu0 | ✓ | 37 | 7.7e-09 | ✓ | 0.12 | 1.4 |
-| conv_pe20 | 10000 | gmres+ilu0 | ✓ | 12 | 5.3e-09 | ✓ | 0.10 | 1.4 |
-| conv_pe20_large | 250000 | gmres+ilu0 | ✓ | 27 | 6.9e-09 | ✓ | 3.67 | 35.2 |
+| poisson2d_med | 40000 | cg+ic0 | ✓ | 134 | 8.8e-09 | ✓ | 2.81 | 4.7 |
+| poisson2d_large | 1000000 | cg+ic0 | ✓ | 457 | 9.4e-09 | ✓ | 71.91 | 118.2 |
+| poisson3d_med | 64000 | cg+ic0 | ✓ | 41 | 6.4e-09 | ✓ | 0.77 | 9.8 |
+| poisson3d_large | 1000000 | cg+ic0 | ✓ | 78 | 9.3e-09 | ✓ | 17.53 | 155.3 |
+| irregular_med | 14400 | cg+ssor | ✓ | 170 | 8.0e-09 | ✓ | 0.42 | 2.3 |
+| irregular_large | 360000 | cg+ssor | ✓ | 1066 | 9.9e-09 | ✓ | 35.06 | 61.0 |
+| elastic_1e6 | 12800 | cg+ic0 | ✓ | 184 | 9.8e-09 | ✓ | 0.66 | 4.5 |
+| elastic_1e8 | 7200 | cg+ic0 | ✓ | 55 | 7.5e-09 | ✓ | 0.18 | 2.5 |
+| layered_1e4 | 40000 | cg+ic0 | ✓ | 176 | 9.9e-09 | ✓ | 0.72 | 4.7 |
+| conv_pe2 | 10000 | gmres+ilu0 | ✓ | 37 | 7.7e-09 | ✓ | 0.08 | 1.4 |
+| conv_pe20 | 10000 | gmres+ilu0 | ✓ | 12 | 5.3e-09 | ✓ | 0.05 | 1.4 |
+| conv_pe20_large | 250000 | gmres+ilu0 | ✓ | 27 | 6.9e-09 | ✓ | 1.37 | 35.2 |
 
 ## 3. 自动选择 vs 枚举最快方案
 
 | 问题 | 自动选择 | 自动耗时 s | 枚举最快 | 最快耗时 s | 迭代差 | 耗时差 | 候选数 |
 |---|---|---|---|---|---|---|---|
-| poisson2d_small | cg+jacobi | 0.024 | cg+none | 4.64e-03 | +0% | +411% | 5 |
-| poisson2d_med | cg+none | 0.784 | cg+jacobi | 0.733 | +0% | +7% | 5 |
-| poisson2d_large | cg+jacobi | 45.428 | cg+jacobi | 55.894 | +0% | -19% | 2 (受限) |
-| poisson3d_med | cg+jacobi | 0.319 | cg+none | 0.286 | +0% | +11% | 5 |
-| poisson3d_large | cg+jacobi | 10.057 | cg+none | 10.441 | +0% | -4% | 2 (受限) |
-| irregular_med | cg+jacobi | 0.128 | cg+jacobi | 0.135 | +0% | -5% | 5 |
-| irregular_large | cg+jacobi | 60.291 | cg+jacobi | 53.974 | +0% | +12% | 2 (受限) |
-| elastic_1e6 | cg+jacobi | 0.258 | cg+jacobi | 0.207 | +0% | +24% | 5 |
-| elastic_1e8 | cg+jacobi | 0.086 | cg+jacobi | 0.098 | +0% | -13% | 5 |
-| layered_1e4 | cg+jacobi | 0.970 | cg+ic0+RCM | 1.080 | +407% | -10% | 5 |
-| conv_pe2 | gmres+ilu0 | 0.194 | bicgstab+none | 0.110 | -76% | +76% | 7 |
-| conv_pe20 | gmres+ilu0 | 0.082 | gmres+ilu0 | 0.098 | +0% | -17% | 7 |
-| conv_pe20_large | gmres+ilu0+RCM | 2.272 | gmres+ilu0+RCM | 2.474 | +0% | -8% | 7 |
+| poisson2d_small | cg+none | 4.42e-03 | cg+none | 4.52e-03 | +0% | -2% | 5 |
+| poisson2d_med | cg+none | 0.287 | cg+jacobi | 0.280 | +0% | +2% | 5 |
+| poisson2d_large | cg+jacobi | 25.882 | cg+jacobi | 27.029 | +0% | -4% | 2 (受限) |
+| poisson3d_med | cg+none | 0.132 | cg+jacobi | 0.129 | +0% | +2% | 5 |
+| poisson3d_large | cg+none | 4.416 | cg+none | 4.372 | +0% | +1% | 2 (受限) |
+| irregular_med | cg+jacobi | 0.107 | cg+jacobi | 0.107 | +0% | +0% | 5 |
+| irregular_large | cg+jacobi | 19.598 | cg+jacobi | 19.658 | +0% | -0% | 2 (受限) |
+| elastic_1e6 | cg+jacobi | 0.080 | cg+jacobi | 0.080 | +0% | +0% | 5 |
+| elastic_1e8 | cg+jacobi | 0.033 | cg+jacobi | 0.032 | +0% | +1% | 5 |
+| layered_1e4 | cg+jacobi | 0.339 | cg+jacobi | 0.335 | +0% | +1% | 5 |
+| conv_pe2 | gmres+ilu0 | 0.071 | bicgstab+none | 0.048 | -76% | +47% | 7 |
+| conv_pe20 | gmres+ilu0 | 0.038 | gmres+ilu0+RCM | 0.037 | +0% | +4% | 7 |
+| conv_pe20_large | gmres+ilu0+RCM | 1.043 | gmres+ilu0+RCM | 1.039 | +0% | +0% | 7 |
 
 ## 4. 不收敛报告
 
@@ -76,7 +76,7 @@
 |---|---|---|---|
 | poisson2d_small | 40 → 40 | 62439 → 43420 | 34 → 36 |
 | poisson2d_med | 200 → 200 | 7960199 → 5353100 | 134 → 134 |
-| poisson2d_large | 1000 → 1000 | 999000999 → 667165500 | 457 → 457 |
+| poisson2d_large | 1000 → 1000 | 999000999 → 667165500 | 400 → 400 |
 | poisson3d_med | 1600 → 1220 | 99902439 → 57451498 | 41 → 41 |
 | poisson3d_large | 10000 → 7550 | 9900990099 → 5545171995 | 78 → 83 |
 | irregular_med | 14257 → 399 | 73867577 → 2054635 | 1 → 1 |

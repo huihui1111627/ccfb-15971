@@ -480,17 +480,15 @@ def run_acceptance(out_dir: str, keys: Optional[List[str]] = None,
     print("重排序效果 ...", flush=True)
     summary["reorder"] = _acceptance_reordering(problems)
     print("稀疏结构图数据 ...", flush=True)
+    # 结构散点图数据较大（每个问题 2 万点 ×2），只保留小问题的概览统计，
+    # 具体绘图数据由 export_web 单独产出到 web/data，不塞进验收 JSON。
     for prob in problems:
         if prob.n <= 300000:
+            st = bandwidth_stats(prob.A)
             summary["structure"][prob.name] = {
-                "plain": _sparse_structure_image(prob.A),
+                "n": prob.n, "nnz": prob.nnz,
+                "bandwidth": st["bandwidth"], "profile": st["profile"],
             }
-            try:
-                order = rcm_order(prob.A)
-                summary["structure"][prob.name]["rcm"] = _sparse_structure_image(
-                    permute(prob.A, order))
-            except Exception:
-                pass
     with open(os.path.join(out_dir, "acceptance.json"), "w") as f:
         json.dump(summary, f, ensure_ascii=False, indent=1, default=float)
     return summary
